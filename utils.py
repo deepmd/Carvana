@@ -2,6 +2,8 @@ import cv2
 from PIL import Image
 import numpy as np
 import matplotlib.pyplot as plt
+from glob import glob
+from datetime import datetime
 
 def randomHueSaturationValue(image, hue_shift_limit=(-180, 180),
                              sat_shift_limit=(-255, 255),
@@ -135,3 +137,9 @@ def show_mask(img_path, mask, pred_mask, show_img=True, size=None, mask_cmap='Gr
         pred_mask = cv2.resize(pred_mask, size)
         plt.imshow(pred_mask, cmap=pred_cmap, alpha=.3)
 
+
+def get_run_name(weights_path, model_name):
+    run_name = '{0}-{1:%Y-%m-%d}'.format(model_name, datetime.now())
+    run_number = str(len(glob(run_name + '*')) + 1)
+    return run_name + '-' + run_number
+    
