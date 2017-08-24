@@ -69,19 +69,25 @@ def randomHorizontalFlip(image, mask, u=0.5):
 
     return image, mask
 
-def train_generator(path, mask_path, ids_train_split, input_size, batch_size):
+def train_generator(path, mask_path, ids_train_split, input_size, batch_size, bboxes=None):
     while True:
         for start in range(0, len(ids_train_split), batch_size):
             x_batch = []
             y_batch = []
             end = min(start + batch_size, len(ids_train_split))
-            ids_train_batch = ids_train_split[start:end]
+            ids_train_batch = ids_train_split[start:end]           
             for id in ids_train_batch.values:
                 img = cv2.imread(path.format(id))
-                img = cv2.resize(img, (input_size, input_size))
                 mask = np.array(Image.open(mask_path.format(id)).convert('L'))
+                if bboxes is not None:
+                    x1, y1, x2, y2 = bboxes[id]                   
+                    if (x2 > x1 and y2 > y1):
+                        # bounding box width/height is not 0
+                        img = img[y1:y2, x1:x2]
+                        mask = mask[y1:y2, x1:x2]
+                img = cv2.resize(img, (input_size, input_size), interpolation=cv2.INTER_LINEAR)
+                mask = cv2.resize(mask, (input_size, input_size), interpolation=cv2.INTER_LINEAR)
                 #mask = cv2.imread(mask_path.format(id), cv2.IMREAD_GRAYSCALE)
-                mask = cv2.resize(mask, (input_size, input_size))
                 img = randomHueSaturationValue(img,
                                                hue_shift_limit=(-50, 50),
                                                sat_shift_limit=(-5, 5),
@@ -98,8 +104,7 @@ def train_generator(path, mask_path, ids_train_split, input_size, batch_size):
             y_batch = np.array(y_batch, np.float32) / 255
             yield x_batch, y_batch
 
-
-def valid_generator(path, mask_path, ids_valid_split, input_size, batch_size):
+def valid_generator(path, mask_path, ids_valid_split, input_size, batch_size, bboxes=None):
     while True:
         for start in range(0, len(ids_valid_split), batch_size):
             x_batch = []
@@ -108,10 +113,16 @@ def valid_generator(path, mask_path, ids_valid_split, input_size, batch_size):
             ids_valid_batch = ids_valid_split[start:end]
             for id in ids_valid_batch.values:
                 img = cv2.imread(path.format(id))
-                img = cv2.resize(img, (input_size, input_size))
                 mask = np.array(Image.open(mask_path.format(id)).convert('L'))
+                if bboxes is not None:
+                    x1, y1, x2, y2 = bboxes[id]
+                    if (x2 > x1 and y2 > y1):
+                        # bounding box width/height is not 0
+                        img = img[y1:y2, x1:x2]
+                        mask = mask[y1:y2, x1:x2]
+                img = cv2.resize(img, (input_size, input_size), interpolation=cv2.INTER_LINEAR) 
+                mask = cv2.resize(mask, (input_size, input_size), interpolation=cv2.INTER_LINEAR)                               
                 #mask = cv2.imread(mask_path.format(id), cv2.IMREAD_GRAYSCALE)
-                mask = cv2.resize(mask, (input_size, input_size))
                 mask = np.expand_dims(mask, axis=2)
                 x_batch.append(img)
                 y_batch.append(mask)
@@ -142,4 +153,14 @@ def get_run_name(weights_path, model_name):
     run_name = '{0}-{1:%Y-%m-%d}'.format(model_name, datetime.now())
     run_number = str(len(glob(run_name + '*')) + 1)
     return run_name + '-' + run_number
+
+def get_bboxes(path):
+    bboxes = dict()
+    with open(path) as fbbox:
+        for line in fbbox:
+            cols = line.split(',')
+            bboxes[cols[0]] = (int(cols[1]), int(cols[2]), \
+                                  int(cols[3]), int(cols[4]))
+            
+    return bboxes
     

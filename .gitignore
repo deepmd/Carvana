@@ -11,3 +11,4 @@ __pycache__/
 !logs/.gitkeep 
 !submits/.gitkeep 
 !weights/.gitkeep
+!inputs/train_bbox.csv

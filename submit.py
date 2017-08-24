@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import pandas as pd
 import threading
-import queue
+import Queue as queue
 import tensorflow as tf
 from tqdm import tqdm
 import os
