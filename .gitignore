@@ -5,6 +5,7 @@ weights/*
 __pycache__/
 .vscode/
 .ipynb_checkpoints/
+*.pyc
 
 # exception to the rule
 !inputs/.gitkeep 
