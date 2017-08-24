@@ -2,8 +2,8 @@ import cv2
 from PIL import Image
 import numpy as np
 import matplotlib.pyplot as plt
-from glob import glob
-from datetime import datetime
+import os
+import datetime
 
 def randomHueSaturationValue(image, hue_shift_limit=(-180, 180),
                              sat_shift_limit=(-255, 255),
@@ -69,6 +69,7 @@ def randomHorizontalFlip(image, mask, u=0.5):
 
     return image, mask
 
+
 def train_generator(path, mask_path, ids_train_split, input_size, batch_size, bboxes=None):
     while True:
         for start in range(0, len(ids_train_split), batch_size):
@@ -79,6 +80,7 @@ def train_generator(path, mask_path, ids_train_split, input_size, batch_size, bb
             for id in ids_train_batch.values:
                 img = cv2.imread(path.format(id))
                 mask = np.array(Image.open(mask_path.format(id)).convert('L'))
+                #mask = cv2.imread(mask_path.format(id), cv2.IMREAD_GRAYSCALE)
                 if bboxes is not None:
                     x1, y1, x2, y2 = bboxes[id]                   
                     if (x2 > x1 and y2 > y1):
@@ -87,7 +89,6 @@ def train_generator(path, mask_path, ids_train_split, input_size, batch_size, bb
                         mask = mask[y1:y2, x1:x2]
                 img = cv2.resize(img, (input_size, input_size), interpolation=cv2.INTER_LINEAR)
                 mask = cv2.resize(mask, (input_size, input_size), interpolation=cv2.INTER_LINEAR)
-                #mask = cv2.imread(mask_path.format(id), cv2.IMREAD_GRAYSCALE)
                 img = randomHueSaturationValue(img,
                                                hue_shift_limit=(-50, 50),
                                                sat_shift_limit=(-5, 5),
@@ -103,6 +104,7 @@ def train_generator(path, mask_path, ids_train_split, input_size, batch_size, bb
             x_batch = np.array(x_batch, np.float32) / 255
             y_batch = np.array(y_batch, np.float32) / 255
             yield x_batch, y_batch
+            
 
 def valid_generator(path, mask_path, ids_valid_split, input_size, batch_size, bboxes=None):
     while True:
@@ -114,6 +116,7 @@ def valid_generator(path, mask_path, ids_valid_split, input_size, batch_size, bb
             for id in ids_valid_batch.values:
                 img = cv2.imread(path.format(id))
                 mask = np.array(Image.open(mask_path.format(id)).convert('L'))
+                #mask = cv2.imread(mask_path.format(id), cv2.IMREAD_GRAYSCALE)
                 if bboxes is not None:
                     x1, y1, x2, y2 = bboxes[id]
                     if (x2 > x1 and y2 > y1):
@@ -122,7 +125,6 @@ def valid_generator(path, mask_path, ids_valid_split, input_size, batch_size, bb
                         mask = mask[y1:y2, x1:x2]
                 img = cv2.resize(img, (input_size, input_size), interpolation=cv2.INTER_LINEAR) 
                 mask = cv2.resize(mask, (input_size, input_size), interpolation=cv2.INTER_LINEAR)                               
-                #mask = cv2.imread(mask_path.format(id), cv2.IMREAD_GRAYSCALE)
                 mask = np.expand_dims(mask, axis=2)
                 x_batch.append(img)
                 y_batch.append(mask)
@@ -131,28 +133,56 @@ def valid_generator(path, mask_path, ids_valid_split, input_size, batch_size, bb
             yield x_batch, y_batch
 
 
-def show_mask(img_path, mask, pred_mask, show_img=True, size=None, mask_cmap='Greens', pred_cmap='Reds'):
+def show_mask(img_path, mask, pred_mask, show_img=True, bbox=None, mask_cmap='Greens', pred_cmap='Reds'):
     fig = plt.figure(figsize=(10,10))
+    plt.xticks([])
+    plt.yticks([])
+    plt.title(img_path)
     img = cv2.imread(img_path)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    if size is not None:
-        img = cv2.resize(img, size)
-    else:
-        size = (img.shape[1], img.shape[0])
     if show_img:
         plt.imshow(img)
+    orig_size = (img.shape[1], img.shape[0])
+    (x1,y1,x2,y2) = (0,0,0,0) if bbox is None else tuple(bbox)
+    size = orig_size if bbox is None else (x2-x1+1, y2-y1+1)
     if mask is not None:
-        mask = cv2.resize(mask, size)
+        mask = cv2.resize(mask, size, interpolation=cv2.INTER_LINEAR)
+        if bbox is not None:
+            mask_full = np.zeros(orig_size[::-1])
+            mask_full[y1:y2+1, x1:x2+1] = mask
+            mask = mask_full
         plt.imshow(mask, cmap=mask_cmap, alpha=(.5 if show_img else 1))
     if pred_mask is not None:
-        pred_mask = cv2.resize(pred_mask, size)
+        pred_mask = cv2.resize(pred_mask, size, interpolation=cv2.INTER_LINEAR)
+        if bbox is not None:
+            mask_full = np.zeros(orig_size[::-1])
+            mask_full[y1:y2+1, x1:x2+1] = pred_mask
+            pred_mask = mask_full
         plt.imshow(pred_mask, cmap=pred_cmap, alpha=.3)
 
 
-def get_run_name(weights_path, model_name):
-    run_name = '{0}-{1:%Y-%m-%d}'.format(model_name, datetime.now())
-    run_number = str(len(glob(run_name + '*')) + 1)
-    return run_name + '-' + run_number
+def show_test_masks(test_path, test_masks_path, mask_cmap='Greens'):
+    for img_path in os.listdir(test_path):
+        fig = plt.figure(figsize=(10,10))
+        plt.xticks([])
+        plt.yticks([])
+        plt.title(test_path + img_path)
+        img = cv2.imread(test_path + img_path)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        plt.imshow(img)
+        if test_masks_path is not None:
+            id =  img_path.split('.')[0]
+            mask = Image.open('{0}{1}.gif'.format(test_masks_path, id)).convert('L')
+            plt.imshow(mask, cmap=mask_cmap, alpha=.5)
+
+
+def get_run_name(weights_file, model_name):
+    dt = datetime.datetime.now()
+    while True:
+        run_name = '{0}-{1:%Y-%m-%d-%H%M}'.format(model_name, dt)
+        if not os.path.isfile(weights_file.format(run_name)):
+            return run_name
+        dt = dt + datetime.timedelta(minutes=-1)
 
 def get_bboxes(path):
     bboxes = dict()
@@ -160,7 +190,7 @@ def get_bboxes(path):
         for line in fbbox:
             cols = line.split(',')
             bboxes[cols[0]] = (int(cols[1]), int(cols[2]), \
-                                  int(cols[3]), int(cols[4]))
+                               int(cols[3]), int(cols[4]))
             
     return bboxes
     

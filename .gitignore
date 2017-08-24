@@ -1,6 +1,6 @@
 inputs/*
 logs/*
-submits/*
+outputs/*
 weights/*
 __pycache__/
 .vscode/
@@ -9,6 +9,6 @@ __pycache__/
 # exception to the rule
 !inputs/.gitkeep 
 !logs/.gitkeep 
-!submits/.gitkeep 
+!outputs/.gitkeep 
 !weights/.gitkeep
 !inputs/train_bbox.csv
