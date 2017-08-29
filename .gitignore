@@ -6,6 +6,7 @@ __pycache__/
 .vscode/
 .ipynb_checkpoints/
 *.pyc
+object_detection/*
 
 # exception to the rule
 !inputs/.gitkeep 
@@ -13,3 +14,4 @@ __pycache__/
 !outputs/.gitkeep 
 !weights/.gitkeep
 !inputs/train_bbox.csv
+!inputs/test_bbox.csv
