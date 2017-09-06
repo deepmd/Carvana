@@ -2,14 +2,9 @@ import cv2
 from PIL import Image
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import colors
 import os
 import datetime
-
-import time
-import multiprocessing as mp
-from multiprocessing import cpu_count
-from functools import partial
-
 
 def randomHueSaturationValue(image, hue_shift_limit=(-180, 180),
                              sat_shift_limit=(-255, 255),
@@ -91,8 +86,8 @@ def train_generator(path, mask_path, ids_train_split, input_size, batch_size, bb
                     x1, y1, x2, y2 = bboxes[id]                   
                     if (x2 > x1 and y2 > y1):
                         # bounding box width/height is not 0
-                        img = img[y1:y2, x1:x2]
-                        mask = mask[y1:y2, x1:x2]
+                        img = img[y1:y2+1, x1:x2+1]
+                        mask = mask[y1:y2+1, x1:x2+1]
                 img = cv2.resize(img, (input_size, input_size), interpolation=cv2.INTER_LINEAR)
                 mask = cv2.resize(mask, (input_size, input_size), interpolation=cv2.INTER_LINEAR)
                 img = randomHueSaturationValue(img,
@@ -127,8 +122,8 @@ def valid_generator(path, mask_path, ids_valid_split, input_size, batch_size, bb
                     x1, y1, x2, y2 = bboxes[id]
                     if (x2 > x1 and y2 > y1):
                         # bounding box width/height is not 0
-                        img = img[y1:y2, x1:x2]
-                        mask = mask[y1:y2, x1:x2]
+                        img = img[y1:y2+1, x1:x2+1]
+                        mask = mask[y1:y2+1, x1:x2+1]
                 img = cv2.resize(img, (input_size, input_size), interpolation=cv2.INTER_LINEAR) 
                 mask = cv2.resize(mask, (input_size, input_size), interpolation=cv2.INTER_LINEAR)                               
                 mask = np.expand_dims(mask, axis=2)
@@ -138,8 +133,18 @@ def valid_generator(path, mask_path, ids_valid_split, input_size, batch_size, bb
             y_batch = np.array(y_batch, np.float32) / 255
             yield x_batch, y_batch
 
-def show_mask(img_path, mask, pred_mask, show_img=True, bbox=None, mask_cmap='Greens', pred_cmap='Reds'):
-    fig = plt.figure(figsize=(20,20))
+
+def show_mask(img_path, mask, pred_mask, show_img=True, bbox=None, threshold = 0.5):
+    mask_cmap = colors.ListedColormap(['black', '#bd0b42'])
+    mask_cmap = mask_cmap(np.arange(2))
+    mask_cmap[:,-1] = np.linspace(0, 1, 2)
+    mask_cmap = colors.ListedColormap(mask_cmap)
+    pred_cmap = colors.ListedColormap(['black', '#42f49e'])
+    pred_cmap = pred_cmap(np.arange(2))
+    pred_cmap[:,-1] = np.linspace(0, 1, 2)
+    pred_cmap = colors.ListedColormap(pred_cmap)
+    fig = plt.figure(figsize=(10,10))
+    plt.rcParams['axes.facecolor']='black'
     plt.xticks([])
     plt.yticks([])
     plt.title(img_path)
@@ -152,21 +157,27 @@ def show_mask(img_path, mask, pred_mask, show_img=True, bbox=None, mask_cmap='Gr
     size = orig_size if bbox is None else (x2-x1+1, y2-y1+1)
     if mask is not None:
         mask = cv2.resize(mask, size, interpolation=cv2.INTER_LINEAR)
+        mask = mask > threshold
         if bbox is not None:
             mask_full = np.zeros(orig_size[::-1])
             mask_full[y1:y2+1, x1:x2+1] = mask
             mask = mask_full
-        plt.imshow(mask, cmap=mask_cmap, alpha=(.5 if show_img else 1))
+        plt.imshow(mask, cmap=mask_cmap, alpha=(.6 if show_img else 1))
     if pred_mask is not None:
         pred_mask = cv2.resize(pred_mask, size, interpolation=cv2.INTER_LINEAR)
+        pred_mask = pred_mask > threshold
         if bbox is not None:
             mask_full = np.zeros(orig_size[::-1])
             mask_full[y1:y2+1, x1:x2+1] = pred_mask
             pred_mask = mask_full
-        plt.imshow(pred_mask, cmap=pred_cmap, alpha=.3)
+        plt.imshow(pred_mask, cmap=pred_cmap, alpha=.6)
 
 
-def show_test_masks(test_path, test_masks_path, mask_cmap='Greens'):
+def show_test_masks(test_path, test_masks_path):
+    mask_cmap = colors.ListedColormap(['black', '#42f49e'])
+    mask_cmap = mask_cmap(np.arange(2))
+    mask_cmap[:,-1] = np.linspace(0, 1, 2)
+    mask_cmap = colors.ListedColormap(mask_cmap)
     for img_path in os.listdir(test_path):
         fig = plt.figure(figsize=(10,10))
         plt.xticks([])
@@ -178,7 +189,7 @@ def show_test_masks(test_path, test_masks_path, mask_cmap='Greens'):
         if test_masks_path is not None:
             id =  img_path.split('.')[0]
             mask = Image.open('{0}{1}.gif'.format(test_masks_path, id)).convert('L')
-            plt.imshow(mask, cmap=mask_cmap, alpha=.5)
+            plt.imshow(mask, cmap=mask_cmap, alpha=.6)
 
 
 def get_run_name(weights_file, model_name):
