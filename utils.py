@@ -5,6 +5,12 @@ import matplotlib.pyplot as plt
 import os
 import datetime
 
+import time
+import multiprocessing as mp
+from multiprocessing import cpu_count
+from functools import partial
+
+
 def randomHueSaturationValue(image, hue_shift_limit=(-180, 180),
                              sat_shift_limit=(-255, 255),
                              val_shift_limit=(-255, 255), u=0.5):
@@ -132,9 +138,8 @@ def valid_generator(path, mask_path, ids_valid_split, input_size, batch_size, bb
             y_batch = np.array(y_batch, np.float32) / 255
             yield x_batch, y_batch
 
-
 def show_mask(img_path, mask, pred_mask, show_img=True, bbox=None, mask_cmap='Greens', pred_cmap='Reds'):
-    fig = plt.figure(figsize=(10,10))
+    fig = plt.figure(figsize=(20,20))
     plt.xticks([])
     plt.yticks([])
     plt.title(img_path)

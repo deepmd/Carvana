@@ -1,12 +1,13 @@
 from keras.models import Model
 from keras.layers import Input, Concatenate, Conv2D, MaxPooling2D, Conv2DTranspose, UpSampling2D, Activation, BatchNormalization, Dropout, Reshape
-from keras.regularizers import l2
 
-def bn_nonlin_conv(inputs, filters, sz, acti, init, reg, stride=1):
-    n = BatchNormalization()(inputs)
-    n = Activation(acti)(n)
-    n = Conv2D(filters, (sz, sz), strides=(stride, stride), activation=acti, kernel_initializer=init, 
+def bn_nonlin_conv(inputs, filters, sz, acti_layer, init, reg, stride=1):
+    n = acti_layer(inputs)
+    n = BatchNormalization()(n)
+    n = Conv2D(filters, (sz, sz), strides=(stride, stride), kernel_initializer=init, 
                kernel_regularizer=reg, padding='same')(n)
+    n = acti_layer(n)
+
     return n
 
 def dense_block(layers, inputs, growth_rate, acti, init, reg, do=0):
@@ -28,31 +29,32 @@ def transition_down(inputs, acti, init, reg, mp, do=0):
         n = bn_nonlin_conv(inputs, filters, 1, acti, init, reg, stride=2)
     return n
 
-def transition_up(inputs, acti, init, reg, up):
+def transition_up(inputs, acti_layer, init, reg, up):
     filters = inputs.get_shape().as_list()[-1]
     if up:
         n = UpSampling2D()(inputs)
-        n = Conv2D(filters, (2, 2), activation=acti, kernel_initializer=init, kernel_regularizer=reg, padding='same')(n)
+        n = Conv2D(filters, (2, 2), kernel_initializer=init, kernel_regularizer=reg, padding='same')(n)
+        n = acti_layer(n)
     else:
-        n = Conv2DTranspose(filters, (3, 3), strides=(2, 2), activation=acti, kernel_initializer=init, kernel_regularizer=reg, padding='same')(inputs)
+        n = Conv2DTranspose(filters, (3, 3), strides=(2, 2), kernel_initializer=init, kernel_regularizer=reg, padding='same')(inputs)
+        n = acti_layer(n)
     return n
 
-def level_block(inputs, growth_rate, depth, layers_per_block, acti, init, reg, do, mp, up):
+def level_block(inputs, growth_rate, depth, layers_per_block, acti_layer, init, reg, do, mp, up):
     if depth > 0:
-        n = dense_block(layers_per_block[depth], inputs, growth_rate, acti, init, reg, do)
+        n = dense_block(layers_per_block[depth], inputs, growth_rate, acti_layer, init, reg, do)
         n = Concatenate()([inputs, n])
-        m = transition_down(n, acti, init, reg, mp, do)
-        m = level_block(m, growth_rate, depth-1, layers_per_block, acti, init, reg, do, mp, up)[0]
-        m = transition_up(m, acti, init, reg, up)
+        m = transition_down(n, acti_layer, init, reg, mp, do)
+        m = level_block(m, growth_rate, depth-1, layers_per_block, acti_layer, init, reg, do, mp, up)[0]
+        m = transition_up(m, acti_layer, init, reg, up)
         m = Concatenate()([n, m])
-        o = dense_block(layers_per_block[depth], m, growth_rate, acti, init, reg, do)
+        o = dense_block(layers_per_block[depth], m, growth_rate, acti_layer, init, reg, do)
     else:
         m = None
-        o = dense_block(layers_per_block[0], inputs, growth_rate, acti, init, reg, do)
+        o = dense_block(layers_per_block[0], inputs, growth_rate, acti_layer, init, reg, do)
     return o, m
 
-def Tiramisu(img_shape, num_classes=1, filters=48, growth_rate=16, depth=5, layers_per_block=[4,5,7,10,12,15],
-             activation='relu', init='he_uniform', dropout=0.2, regularizer=l2(1e-4), maxpool=False, upconv=False):
+def Tiramisu(img_shape, num_classes=1, filters=48, growth_rate=16, depth=5, layers_per_block=[2,2,2,2,2,2,2,2], activation=lambda x: Activation('relu')(x), init='he_uniform', dropout=0.2, regularizer=None, maxpool=False, upconv=False):
     '''
     The One Hundred Layers Tiramisu: Fully Convolutional DenseNets for Semantic Segmentation
     (http://arxiv.org/abs/1611.09326)
@@ -66,7 +68,7 @@ def Tiramisu(img_shape, num_classes=1, filters=48, growth_rate=16, depth=5, laye
     activation: activation function after convolutions
     init: kernels initialization function
     dropout: amount of dropout in the contracting part
-    regulaizer: kernel regularizer function  default: l2(1e-4)
+    regulaizer: kernel regularizer function
     maxpool: use strided conv instead of maxpooling if false
     upconv: use transposed conv instead of upsamping + conv if false
     '''

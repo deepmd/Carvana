@@ -11,11 +11,11 @@ def conv_block(inputs, filters, acti_layer, init, bn, do=0):
     n = BatchNormalization()(n) if bn else n
     return n
 
-def level_block(inputs, filters, depth, acti_layer, init, do, dob, bn, mp, up):
+def level_block(inputs, filters, depth, acti_layer, init, do, dbo, bn, mp, up):
     if depth > 0:
-        n = conv_block(inputs, filters, acti_layer, init, bn, 0 if dob else do)
+        n = conv_block(inputs, filters, acti_layer, init, bn, 0 if dbo else do)
         m = MaxPooling2D()(n) if mp else Conv2D(filters, (3, 3), strides=(2, 2), padding='same')(n)
-        m = level_block(m, 2*filters, depth-1, acti_layer, init, do, dob, bn, mp, up)
+        m = level_block(m, 2*filters, depth-1, acti_layer, init, do, dbo, bn, mp, up)
         if up:
             m = UpSampling2D()(m)
             m = Conv2D(filters, (2, 2), kernel_initializer=init, padding='same')(m)
@@ -27,6 +27,7 @@ def level_block(inputs, filters, depth, acti_layer, init, do, dob, bn, mp, up):
         m = conv_block(m, filters, acti_layer, init, bn)
     else:
         m = conv_block(inputs, filters, acti_layer, init, bn, do)
+        m = Dropout(0.2)(m)
     return m
 
 def UNet(img_shape, num_classes=1, filters=64, depth=4, activation=lambda x: Activation('relu')(x),
@@ -46,6 +47,7 @@ def UNet(img_shape, num_classes=1, filters=64, depth=4, activation=lambda x: Act
     maxpool: use strided conv instead of maxpooling if false
     upconv: use transposed conv instead of upsamping + conv if false
     '''
+    
     i = Input(shape=img_shape)
     o = level_block(i, filters, depth, activation, init, dropout, dropout_base_only, batchnorm, maxpool, upconv)
     o = Conv2D(num_classes, (1, 1), activation='sigmoid')(o)
