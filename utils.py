@@ -52,13 +52,12 @@ def randomShiftScaleRotate(image, mask,
         box1 = box1.astype(np.float32)
         mat = cv2.getPerspectiveTransform(box0, box1)
         image = cv2.warpPerspective(image, mat, (width, height), flags=cv2.INTER_LINEAR, borderMode=borderMode,
-                                    borderValue=(
-                                        0, 0,
-                                        0,))
-        mask = cv2.warpPerspective(mask, mat, (width, height), flags=cv2.INTER_LINEAR, borderMode=borderMode,
-                                   borderValue=(
-                                       0, 0,
-                                       0,))
+                                    borderValue=(0, 0, 0,))
+        if mask is not None:
+            mask = cv2.warpPerspective(mask, mat, (width, height), flags=cv2.INTER_LINEAR, borderMode=borderMode,
+                                       borderValue=(0, 0, 0,))
+        else:
+            mask = mat #a workaround to return transformation matrix without changing func signature
 
     return image, mask
 
@@ -66,9 +65,22 @@ def randomShiftScaleRotate(image, mask,
 def randomHorizontalFlip(image, mask, u=0.5):
     if np.random.random() < u:
         image = cv2.flip(image, 1)
-        mask = cv2.flip(mask, 1)
+        if mask is not None:
+            mask = cv2.flip(mask, 1)
+        else:
+            mask = True #a workaround to return flip status without changing func signature
 
     return image, mask
+
+
+def reverseFlipShiftScaleRotate(image, flip, trans_mat):
+    height, width = image.shape
+    if flip:
+        image = cv2.flip(image, 1)
+    if trans_mat is not None:
+        image = cv2.warpPerspective(image, trans_mat, (width, height), flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP,
+                                    borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0,))
+    return image
 
 
 def train_generator(path, mask_path, ids_train_split, input_size, batch_size, bboxes=None):
@@ -143,7 +155,7 @@ def show_mask(img_path, mask, pred_mask, show_img=True, bbox=None, threshold = 0
     pred_cmap = pred_cmap(np.arange(2))
     pred_cmap[:,-1] = np.linspace(0, 1, 2)
     pred_cmap = colors.ListedColormap(pred_cmap)
-    fig = plt.figure(figsize=(10,10))
+    plt.figure(figsize=(10,10))
     plt.rcParams['axes.facecolor']='black'
     plt.xticks([])
     plt.yticks([])
@@ -179,7 +191,7 @@ def show_test_masks(test_path, test_masks_path):
     mask_cmap[:,-1] = np.linspace(0, 1, 2)
     mask_cmap = colors.ListedColormap(mask_cmap)
     for img_path in os.listdir(test_path):
-        fig = plt.figure(figsize=(10,10))
+        plt.figure(figsize=(10,10))
         plt.xticks([])
         plt.yticks([])
         plt.title(test_path + img_path)
