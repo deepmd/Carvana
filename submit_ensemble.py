@@ -25,13 +25,20 @@ def run_length_encode(mask):
     rle = ' '.join([str(r) for r in runs])
     return rle
 
-def data_loader(q, test_path, batch_size, ids_test, models_info, bboxes, augmentations):
+def data_loader(q, test_path, batch_size, ids_test, models_info, bboxes, augmentations, test_masks_path):
     for start in range(0, len(ids_test), batch_size):
         x_batches = [[[] for _ in range(augmentations+1)] for _ in range(len(models_info))]
         x_augments = [[[] for _ in range(augmentations+1)] for _ in range(len(models_info))]
         x_ids = []
         end = min(start + batch_size, len(ids_test))
         ids_test_batch = ids_test[start:end]
+        if test_masks_path is not None:
+            exist_masks_ids = [id for id in ids_test_batch if os.path.isfile('{0}{1}.gif'.format(test_masks_path, id))]
+            if len(exist_masks_ids) == len(ids_test_batch):
+                x_ids = exist_masks_ids
+                masks = [np.array(Image.open('{0}{1}.gif'.format(test_masks_path, id)).convert('L'), np.float32) / 255 for id in ids_test_batch]
+                q.put((x_ids, None, masks))
+                continue
         for id in ids_test_batch:
             x_ids.append(id)
             img = cv2.imread('{0}{1}.jpg'.format(test_path, id))
@@ -65,39 +72,44 @@ def data_loader(q, test_path, batch_size, ids_test, models_info, bboxes, augment
 
 
 def predictor(q, graph, rles, orig_size, threshold, models_info, batch_size, ids_len, bboxes, augmentations, test_masks_path):
+    total_weights = sum([models_info[i].average_weight * (augmentations+1) for i in range(len(models_info))])
     for i in tqdm(range(0, ids_len, batch_size)):
         (x_ids, x_augments, x_batches) = q.get()
-    probs = {id:np.zeros(orig_size[::-1]) for id in x_ids}
-    for i in range(len(models_info)):
-        for j in range(augmentations+1):
-            with graph.as_default():
-                preds = models_info[i].predictor(x_batches[i][j])
-            preds = np.squeeze(preds, axis=3)
-            for (id, aug, pred) in zip(x_ids, x_augments[i][j], preds):
-                pred = utils.reverseFlipShiftScaleRotate(pred, aug[0], aug[1])
-                (x1,y1,x2,y2) = (0,0,0,0) if bboxes is None else tuple(bboxes[id])
-                size = orig_size if not models_info[i].cropped else (x2-x1+1, y2-y1+1)
-                prob = pred if (pred.shape[1], pred.shape[0]) == size else cv2.resize(pred, size, interpolation=cv2.INTER_LINEAR)
-                if size != orig_size:
-                    prob_full = np.zeros(orig_size[::-1])
-                    prob_full[y1:y2+1, x1:x2+1] = prob
-                    prob = prob_full
-                probs[id] = probs[id] + (models_info[i].average_weight * prob)
-
-    total_weights = sum([models_info[i].average_weight * (augmentations+1) for i in range(len(models_info))])
-    for id in x_ids:
-        prob = probs[id] / total_weights
-        mask = prob > threshold
-        if test_masks_path is not None:
-            img = Image.fromarray((mask * 255).astype(np.uint8), mode='L')
-            img.save('{0}{1}.gif'.format(test_masks_path, id))
-        rle = run_length_encode(mask)
-        rles.append(rle)
+        if x_augments is None:
+            masks = x_batches
+            for mask in masks:
+                rle = run_length_encode(mask)
+                rles.append(rle)
+            continue
+        probs = {id:np.zeros(orig_size[::-1]) for id in x_ids}
+        for i in range(len(models_info)):
+            for j in range(augmentations+1):
+                with graph.as_default():
+                    preds = models_info[i].predictor(x_batches[i][j])
+                preds = np.squeeze(preds, axis=3)
+                for (id, aug, pred) in zip(x_ids, x_augments[i][j], preds):
+                    pred = utils.reverseFlipShiftScaleRotate(pred, aug[0], aug[1])
+                    (x1,y1,x2,y2) = (0,0,0,0) if bboxes is None else tuple(bboxes[id])
+                    size = orig_size if not models_info[i].cropped else (x2-x1+1, y2-y1+1)
+                    prob = pred if (pred.shape[1], pred.shape[0]) == size else cv2.resize(pred, size, interpolation=cv2.INTER_LINEAR)
+                    if size != orig_size:
+                        prob_full = np.zeros(orig_size[::-1])
+                        prob_full[y1:y2+1, x1:x2+1] = prob
+                        prob = prob_full
+                    probs[id] = probs[id] + (models_info[i].average_weight * prob)
+        for id in x_ids:
+            prob = probs[id] / total_weights
+            mask = prob > threshold
+            if test_masks_path is not None:
+                img = Image.fromarray((mask * 255).astype(np.uint8), mode='L')
+                img.save('{0}{1}.gif'.format(test_masks_path, id))
+            rle = run_length_encode(mask)
+            rles.append(rle)
 
 
 def generate_submit_ensemble(models_info, batch_size, threshold, test_path, submit_path, submit_name,
                              augmentations=4, test_masks_path=None, bboxes=None):
-    q_size = 10
+    q_size = 5
     rles = []
     graph = tf.get_default_graph()
 
@@ -108,16 +120,21 @@ def generate_submit_ensemble(models_info, batch_size, threshold, test_path, subm
     img = cv2.imread('{0}{1}.jpg'.format(test_path, ids_test[0]))
     orig_size = (img.shape[1], img.shape[0])
 
-    names = []
-    for id in ids_test:
-        names.append('{}.jpg'.format(id))
+    if bboxes is not None:
+        for id in ids_test:
+            (x1,y1,x2,y2) = bboxes[id]
+            x1,x2 = np.clip((x1,x2), 0, orig_size[0]-1)
+            y1,y2 = np.clip((y1,y2), 0, orig_size[1]-1)
+            bboxes[id] = (x1,y1,x2,y2)
+
+    names = ['{}.jpg'.format(id) for id in ids_test]
 
     if (test_masks_path is not None) and (not os.path.exists(test_masks_path)):
         os.makedirs(test_masks_path)
 
     q = queue.Queue(maxsize=q_size)
     t1 = threading.Thread(target=data_loader, name='DataLoader',
-                          args=(q, test_path, batch_size, ids_test, models_info, bboxes, augmentations, ))
+                          args=(q, test_path, batch_size, ids_test, models_info, bboxes, augmentations, test_masks_path, ))
     t2 = threading.Thread(target=predictor, name='Predictor', 
                           args=(q, graph, rles, orig_size, threshold, models_info, batch_size, len(ids_test), bboxes, augmentations, test_masks_path, ))
     print('Predicting on {} samples with batch_size = {}...'.format(len(ids_test), batch_size))

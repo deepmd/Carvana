@@ -78,9 +78,7 @@ def generate_submit(model, input_size, batch_size, threshold, test_path, submit_
     img = cv2.imread('{0}{1}.jpg'.format(test_path, ids_test[0]))
     orig_size = (img.shape[1], img.shape[0])
 
-    names = []
-    for id in ids_test:
-        names.append('{}.jpg'.format(id))
+    names = ['{}.jpg'.format(id) for id in ids_test]
 
     if (test_masks_path is not None) and (not os.path.exists(test_masks_path)):
         os.makedirs(test_masks_path)
