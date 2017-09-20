@@ -66,8 +66,7 @@ def predictor(q, graph, rles, orig_size, threshold, model, batch_size, ids_len, 
 
 
 def generate_submit(model, input_size, batch_size, threshold, test_path, submit_path,
-                    run_name, test_masks_path=None, bboxes=None):
-    q_size = 10
+                    run_name, test_masks_path=None, bboxes=None, q_size = 10):
     rles = []
     graph = tf.get_default_graph()
 
@@ -77,6 +76,13 @@ def generate_submit(model, input_size, batch_size, threshold, test_path, submit_
         return
     img = cv2.imread('{0}{1}.jpg'.format(test_path, ids_test[0]))
     orig_size = (img.shape[1], img.shape[0])
+
+    if bboxes is not None:
+        for id in ids_test:
+            (x1,y1,x2,y2) = bboxes[id]
+            x1,x2 = np.clip((x1,x2), 0, orig_size[0]-1)
+            y1,y2 = np.clip((y1,y2), 0, orig_size[1]-1)
+            bboxes[id] = (x1,y1,x2,y2)
 
     names = ['{}.jpg'.format(id) for id in ids_test]
 

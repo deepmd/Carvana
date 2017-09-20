@@ -108,8 +108,7 @@ def predictor(q, graph, rles, orig_size, threshold, models_info, batch_size, ids
 
 
 def generate_submit_ensemble(models_info, batch_size, threshold, test_path, submit_path, submit_name,
-                             augmentations=4, test_masks_path=None, bboxes=None):
-    q_size = 5
+                             augmentations=4, test_masks_path=None, bboxes=None, q_size=5):
     rles = []
     graph = tf.get_default_graph()
 

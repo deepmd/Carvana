@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from matplotlib import colors
 import os
 import datetime
+import random
 
 def randomHueSaturationValue(image, hue_shift_limit=(-180, 180),
                              sat_shift_limit=(-255, 255),
@@ -83,7 +84,7 @@ def reverseFlipShiftScaleRotate(image, flip, trans_mat):
     return image
 
 
-def train_generator(path, mask_path, ids_train_split, input_size, batch_size, bboxes=None):
+def train_generator(path, mask_path, ids_train_split, input_size, batch_size, bboxes=None, no_augmentation=False):
     while True:
         for start in range(0, len(ids_train_split), batch_size):
             x_batch = []
@@ -102,15 +103,16 @@ def train_generator(path, mask_path, ids_train_split, input_size, batch_size, bb
                         mask = mask[y1:y2+1, x1:x2+1]
                 img = cv2.resize(img, (input_size, input_size), interpolation=cv2.INTER_LINEAR)
                 mask = cv2.resize(mask, (input_size, input_size), interpolation=cv2.INTER_LINEAR)
-                img = randomHueSaturationValue(img,
-                                               hue_shift_limit=(-50, 50),
-                                               sat_shift_limit=(-5, 5),
-                                               val_shift_limit=(-15, 15))
-                img, mask = randomShiftScaleRotate(img, mask,
-                                                   shift_limit=(-0.0625, 0.0625),
-                                                   scale_limit=(-0.1, 0.1),
-                                                   rotate_limit=(-0, 0))
-                img, mask = randomHorizontalFlip(img, mask)
+                if not no_augmentation:
+                    img = randomHueSaturationValue(img,
+                                                hue_shift_limit=(-50, 50),
+                                                sat_shift_limit=(-5, 5),
+                                                val_shift_limit=(-15, 15))
+                    img, mask = randomShiftScaleRotate(img, mask,
+                                                    shift_limit=(-0.0625, 0.0625),
+                                                    scale_limit=(-0.1, 0.1),
+                                                    rotate_limit=(-0, 0))
+                    img, mask = randomHorizontalFlip(img, mask)
                 mask = np.expand_dims(mask, axis=2)
                 x_batch.append(img)
                 y_batch.append(mask)
@@ -185,23 +187,25 @@ def show_mask(img_path, mask, pred_mask, show_img=True, bbox=None, threshold = 0
         plt.imshow(pred_mask, cmap=pred_cmap, alpha=.6)
 
 
-def show_test_masks(test_path, test_masks_path):
+def show_test_masks(test_path, test_masks_path, number_to_show = None):
     mask_cmap = colors.ListedColormap(['black', '#42f49e'])
     mask_cmap = mask_cmap(np.arange(2))
     mask_cmap[:,-1] = np.linspace(0, 1, 2)
     mask_cmap = colors.ListedColormap(mask_cmap)
-    for img_path in os.listdir(test_path):
-        plt.figure(figsize=(10,10))
+    img_paths = os.listdir(test_path)
+    if number_to_show is not None:
+        img_paths = random.sample(img_paths, number_to_show)
+    for img_path in img_paths:
+        plt.figure(figsize=(15,15))
         plt.xticks([])
         plt.yticks([])
         plt.title(test_path + img_path)
         img = cv2.imread(test_path + img_path)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         plt.imshow(img)
-        if test_masks_path is not None:
-            id =  img_path.split('.')[0]
-            mask = Image.open('{0}{1}.gif'.format(test_masks_path, id)).convert('L')
-            plt.imshow(mask, cmap=mask_cmap, alpha=.6)
+        id =  img_path.split('.')[0]
+        mask = Image.open('{0}{1}.gif'.format(test_masks_path, id)).convert('L')
+        plt.imshow(mask, cmap=mask_cmap, alpha=.6)
 
 
 def get_run_name(weights_file, model_name):
@@ -222,3 +226,16 @@ def get_bboxes(path):
             
     return bboxes
     
+def set_results_reproducible():
+    '''https://keras.io/getting-started/faq/#how-can-i-obtain-reproducible-results-using-keras-during-development'''
+    
+    os.environ['PYTHONHASHSEED'] = '0'
+    np.random.seed(42)
+    rn.seed(12345)
+    session_conf = tf.ConfigProto(intra_op_parallelism_threads=1, inter_op_parallelism_threads=1)
+    tf.set_random_seed(1234)
+
+    sess = tf.Session(graph=tf.get_default_graph(), config=session_conf)
+    K.set_session(sess)
+    
+    return
