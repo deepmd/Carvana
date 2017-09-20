@@ -31,7 +31,7 @@ class AdamAccumulate(Optimizer):
         self.initial_decay = decay
         self.accum_iters = K.variable(accum_iters, name='accum_iters')
 
-    def get_updates(self, params, constraints, loss):
+    def get_updates(self, loss, params):
         grads = self.get_gradients(loss, params)
         self.updates = [K.update_add(self.iterations, 1)]
 
@@ -65,10 +65,9 @@ class AdamAccumulate(Optimizer):
             self.updates.append(K.update(ga, ga_t))
 
             new_p = p_t
-            # apply constraints
-            if p in constraints:
-                c = constraints[p]
-                new_p = c(new_p)
+            # Apply constraints.
+            if getattr(p, 'constraint', None) is not None:
+                new_p = p.constraint(new_p)
             self.updates.append(K.update(p, new_p))
         return self.updates
 
@@ -79,6 +78,6 @@ class AdamAccumulate(Optimizer):
                   'decay': float(K.get_value(self.decay)),
                   'accum_iters': float(K.get_value(self.accum_iters)),
                   'epsilon': self.epsilon}
-        base_config = super(Adam, self).get_config()
+        base_config = super(AdamAccumulate, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 

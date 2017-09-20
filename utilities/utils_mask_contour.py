@@ -1,10 +1,13 @@
 import cv2
 from PIL import Image
 import numpy as np
+import tensorflow as tf
+import random as rn
 import matplotlib.pyplot as plt
 from matplotlib import colors
 import os
 import datetime
+from keras import backend as K
 
 def randomHueSaturationValue(image, hue_shift_limit=(-180, 180),
                              sat_shift_limit=(-255, 255),
@@ -24,7 +27,7 @@ def randomHueSaturationValue(image, hue_shift_limit=(-180, 180),
     return image
 
 
-def randomShiftScaleRotate(image, mask,
+def randomShiftScaleRotate(image, mask, contour,
                            shift_limit=(-0.0625, 0.0625),
                            scale_limit=(-0.1, 0.1),
                            rotate_limit=(-45, 45), aspect_limit=(0, 0),
@@ -52,86 +55,106 @@ def randomShiftScaleRotate(image, mask,
         box1 = box1.astype(np.float32)
         mat = cv2.getPerspectiveTransform(box0, box1)
         image = cv2.warpPerspective(image, mat, (width, height), flags=cv2.INTER_LINEAR, borderMode=borderMode,
-                                    borderValue=(
-                                        0, 0,
-                                        0,))
+                                    borderValue=(0, 0, 0,))
         mask = cv2.warpPerspective(mask, mat, (width, height), flags=cv2.INTER_LINEAR, borderMode=borderMode,
-                                   borderValue=(
-                                       0, 0,
-                                       0,))
+                                   borderValue=(0, 0, 0,))
+        contour = cv2.warpPerspective(contour, mat, (width, height), flags=cv2.INTER_LINEAR, borderMode=borderMode,
+                                   borderValue=(0, 0, 0,))
 
-    return image, mask
+    return image, mask, contour
 
 
-def randomHorizontalFlip(image, mask, u=0.5):
+def randomHorizontalFlip(image, mask, contour, u=0.5):
     if np.random.random() < u:
         image = cv2.flip(image, 1)
         mask = cv2.flip(mask, 1)
+        contour = cv2.flip(contour, 1)
 
-    return image, mask
+    return image, mask, contour
 
 
-def train_generator(path, mask_path, ids_train_split, input_size, batch_size, bboxes=None):
+def train_generator(path, mask_path, contour_path, ids_train_split, input_size, batch_size, bboxes=None):    
     while True:
         for start in range(0, len(ids_train_split), batch_size):
             x_batch = []
-            y_batch = []
+            y1_batch = []
+            y2_batch = []
             end = min(start + batch_size, len(ids_train_split))
             ids_train_batch = ids_train_split[start:end]           
             for id in ids_train_batch.values:
                 img = cv2.imread(path.format(id))
                 mask = np.array(Image.open(mask_path.format(id)).convert('L'))
-                #mask = cv2.imread(mask_path.format(id), cv2.IMREAD_GRAYSCALE)
+                contour = cv2.imread(contour_path.format(id), cv2.IMREAD_GRAYSCALE) 
                 if bboxes is not None:
                     x1, y1, x2, y2 = bboxes[id]                   
                     if (x2 > x1 and y2 > y1):
                         # bounding box width/height is not 0
                         img = img[y1:y2+1, x1:x2+1]
                         mask = mask[y1:y2+1, x1:x2+1]
+                        contour = contour[y1:y2+1, x1:x2+1]
                 img = cv2.resize(img, (input_size, input_size), interpolation=cv2.INTER_LINEAR)
                 mask = cv2.resize(mask, (input_size, input_size), interpolation=cv2.INTER_LINEAR)
+                contour = cv2.resize(contour, (input_size, input_size), interpolation=cv2.INTER_LINEAR)
+
                 img = randomHueSaturationValue(img,
                                                hue_shift_limit=(-50, 50),
                                                sat_shift_limit=(-5, 5),
                                                val_shift_limit=(-15, 15))
-                img, mask = randomShiftScaleRotate(img, mask,
+                img, mask, contour = randomShiftScaleRotate(img, mask, contour, 
                                                    shift_limit=(-0.0625, 0.0625),
                                                    scale_limit=(-0.1, 0.1),
                                                    rotate_limit=(-0, 0))
-                img, mask = randomHorizontalFlip(img, mask)
+                img, mask, contour = randomHorizontalFlip(img, mask, contour)
+
                 mask = np.expand_dims(mask, axis=2)
+                contour = np.expand_dims(contour, axis=2)
+                    
                 x_batch.append(img)
-                y_batch.append(mask)
+                y1_batch.append(mask)
+                y2_batch.append(contour)
+                                       
             x_batch = np.array(x_batch, np.float32) / 255
-            y_batch = np.array(y_batch, np.float32) / 255
-            yield x_batch, y_batch
+            y1_batch = np.array(y1_batch, np.float32) / 255
+            y2_batch = np.array(y2_batch, np.float32) / 255
+
+            yield (x_batch, {'seg_out': y1_batch, 'contour_out': y2_batch}) #, 'final_seg': y1_batch})
             
 
-def valid_generator(path, mask_path, ids_valid_split, input_size, batch_size, bboxes=None):
+def valid_generator(path, mask_path, contour_path, ids_valid_split, input_size, batch_size, bboxes=None):
     while True:
         for start in range(0, len(ids_valid_split), batch_size):
             x_batch = []
-            y_batch = []
+            y1_batch = []
+            y2_batch = []
             end = min(start + batch_size, len(ids_valid_split))
             ids_valid_batch = ids_valid_split[start:end]
             for id in ids_valid_batch.values:
                 img = cv2.imread(path.format(id))
                 mask = np.array(Image.open(mask_path.format(id)).convert('L'))
-                #mask = cv2.imread(mask_path.format(id), cv2.IMREAD_GRAYSCALE)
+                contour = cv2.imread(contour_path.format(id), cv2.IMREAD_GRAYSCALE)
                 if bboxes is not None:
                     x1, y1, x2, y2 = bboxes[id]
                     if (x2 > x1 and y2 > y1):
                         # bounding box width/height is not 0
                         img = img[y1:y2+1, x1:x2+1]
                         mask = mask[y1:y2+1, x1:x2+1]
+                        contour = contour[y1:y2+1, x1:x2+1]
                 img = cv2.resize(img, (input_size, input_size), interpolation=cv2.INTER_LINEAR) 
-                mask = cv2.resize(mask, (input_size, input_size), interpolation=cv2.INTER_LINEAR)                               
+                mask = cv2.resize(mask, (input_size, input_size), interpolation=cv2.INTER_LINEAR)
+                contour = cv2.resize(contour, (input_size, input_size), interpolation=cv2.INTER_LINEAR) 
+
                 mask = np.expand_dims(mask, axis=2)
+                contour = np.expand_dims(contour, axis=2)
+
                 x_batch.append(img)
-                y_batch.append(mask)
+                y1_batch.append(mask)
+                y2_batch.append(contour)
+
             x_batch = np.array(x_batch, np.float32) / 255
-            y_batch = np.array(y_batch, np.float32) / 255
-            yield x_batch, y_batch
+            y1_batch = np.array(y1_batch, np.float32) / 255
+            y2_batch = np.array(y2_batch, np.float32) / 255
+
+            yield (x_batch, {'seg_out': y1_batch, 'contour_out': y2_batch}) #, 'final_seg': y1_batch})
 
 
 def show_mask(img_path, mask, pred_mask, show_img=True, bbox=None, threshold = 0.5):
@@ -143,7 +166,7 @@ def show_mask(img_path, mask, pred_mask, show_img=True, bbox=None, threshold = 0
     pred_cmap = pred_cmap(np.arange(2))
     pred_cmap[:,-1] = np.linspace(0, 1, 2)
     pred_cmap = colors.ListedColormap(pred_cmap)
-    fig = plt.figure(figsize=(10,10))
+    fig = plt.figure(figsize=(20,20))
     plt.rcParams['axes.facecolor']='black'
     plt.xticks([])
     plt.yticks([])
@@ -151,9 +174,10 @@ def show_mask(img_path, mask, pred_mask, show_img=True, bbox=None, threshold = 0
     img = cv2.imread(img_path)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     if show_img:
-        plt.imshow(img)
+        (x1,y1,x2,y2) = (0,0,0,0) if bbox is None else tuple(bbox)
+        plt.imshow(img[y1:y2+1, x1:x2+1])
     orig_size = (img.shape[1], img.shape[0])
-    (x1,y1,x2,y2) = (0,0,0,0) if bbox is None else tuple(bbox)
+    #(x1,y1,x2,y2) = (0,0,0,0) if bbox is None else tuple(bbox)
     size = orig_size if bbox is None else (x2-x1+1, y2-y1+1)
     if mask is not None:
         mask = cv2.resize(mask, size, interpolation=cv2.INTER_LINEAR)
@@ -209,4 +233,25 @@ def get_bboxes(path):
                                int(cols[3]), int(cols[4]))
             
     return bboxes
+
+def set_results_reproducible():
+    '''https://keras.io/getting-started/faq/#how-can-i-obtain-reproducible-results-using-keras-during-development'''
     
+    os.environ['PYTHONHASHSEED'] = '0'
+    np.random.seed(42)
+    rn.seed(12345)
+    session_conf = tf.ConfigProto(intra_op_parallelism_threads=1, inter_op_parallelism_threads=1)
+    tf.set_random_seed(1234)
+
+    sess = tf.Session(graph=tf.get_default_graph(), config=session_conf)
+    K.set_session(sess)
+    
+    return
+
+def save_array(fname, arr):
+    c=bcolz.carray(arr, rootdir=fname, mode='w')
+    c.flush()
+
+
+def load_array(fname):
+    return bcolz.open(fname)[:]
