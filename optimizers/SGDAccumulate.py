@@ -26,7 +26,7 @@ class SGDAccumulate(Optimizer):
         self.initial_decay = decay
         self.nesterov = nesterov
 
-    def get_updates(self, params, constraints, loss):
+    def get_updates(self, loss, params):
         grads = self.get_gradients(loss, params)
         self.updates = []
 
@@ -63,9 +63,8 @@ class SGDAccumulate(Optimizer):
                 new_p = p + v
 
             # Apply constraints.
-            if p in constraints:
-                c = constraints[p]
-                new_p = c(new_p)
+            if getattr(p, 'constraint', None) is not None:
+                new_p = p.constraint(new_p)
 
             self.updates.append(K.update(p, new_p))
 
