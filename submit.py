@@ -52,7 +52,7 @@ def predictor(q, graph, rles, orig_size, threshold, model, batch_size, ids_len, 
         for (id, pred) in zip(x_ids, preds):
             (x1,y1,x2,y2) = (0,0,0,0) if bboxes is None else tuple(bboxes[id])
             size = orig_size if bboxes is None else (x2-x1+1, y2-y1+1)
-            prob = pred if (preds.shape[1], preds.shape[0]) == size else cv2.resize(pred, size, interpolation=cv2.INTER_LINEAR)
+            prob = pred if (pred.shape[1], pred.shape[0]) == size else cv2.resize(pred, size, interpolation=cv2.INTER_LINEAR)
             mask = prob > threshold
             if size != orig_size:
                 mask_full = np.zeros(orig_size[::-1])
@@ -78,9 +78,7 @@ def generate_submit(model, input_size, batch_size, threshold, test_path, submit_
     img = cv2.imread('{0}{1}.jpg'.format(test_path, ids_test[0]))
     orig_size = (img.shape[1], img.shape[0])
 
-    names = []
-    for id in ids_test:
-        names.append('{}.jpg'.format(id))
+    names = ['{}.jpg'.format(id) for id in ids_test]
 
     if (test_masks_path is not None) and (not os.path.exists(test_masks_path)):
         os.makedirs(test_masks_path)
