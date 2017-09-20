@@ -11,7 +11,7 @@ else:
 import tensorflow as tf
 from tqdm import tqdm
 import os
-import utils
+from utilities import utils_masks as utils
 
 # https://www.kaggle.com/stainsby/fast-tested-rle
 def run_length_encode(mask):
