@@ -16,3 +16,4 @@ object_detection/*
 !inputs/train_bbox.csv
 !inputs/train_bbox.csv.bak
 !inputs/test_bbox.csv
+!inputs/test_bbox.csv.bak
