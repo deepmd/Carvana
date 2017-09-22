@@ -87,11 +87,12 @@ def reverseFlipShiftScaleRotate(image, flip, trans_mat):
     return image
 
 
-def train_generator(path, mask_path, ids_train_split, input_size, batch_size, bboxes=None, no_augmentation=False):
+def train_generator(path, mask_path, ids_train_split, input_size, batch_size, bboxes=None,
+                    no_augmentation=False, outputs=None):
     while True:
         for start in range(0, len(ids_train_split), batch_size):
             x_batch = []
-            y_batch = []
+            y_batch = [] if outputs is None else {name:[] for name, scale in outputs.items()}
             end = min(start + batch_size, len(ids_train_split))
             ids_train_batch = ids_train_split[start:end]           
             for id in ids_train_batch.values:
@@ -115,19 +116,29 @@ def train_generator(path, mask_path, ids_train_split, input_size, batch_size, bb
                                                     scale_limit=(-0.1, 0.1),
                                                     rotate_limit=(-0, 0))
                     img, mask = randomHorizontalFlip(img, mask)
-                mask = np.expand_dims(mask, axis=2)
                 x_batch.append(img)
-                y_batch.append(mask)
+                if outputs is None:
+                    mask = np.expand_dims(mask, axis=2)
+                    y_batch.append(mask)
+                else:
+                    for name, scale in outputs.items():
+                        size = int(input_size*scale)
+                        mask_resize = mask if scale == 1 else cv2.resize(mask, (size, size), interpolation=cv2.INTER_LINEAR)
+                        mask_resize = np.expand_dims(mask_resize, axis=2)
+                        y_batch[name].append(mask_resize)
             x_batch = np.array(x_batch, np.float32) / 255
-            y_batch = np.array(y_batch, np.float32) / 255
+            if outputs is None:
+                y_batch = np.array(y_batch, np.float32) / 255
+            else:
+                y_batch = {name:np.array(masks, np.float32) / 255 for name, masks in y_batch.items()}
             yield x_batch, y_batch
             
 
-def valid_generator(path, mask_path, ids_valid_split, input_size, batch_size, bboxes=None):
+def valid_generator(path, mask_path, ids_valid_split, input_size, batch_size, bboxes=None, outputs=None):
     while True:
         for start in range(0, len(ids_valid_split), batch_size):
             x_batch = []
-            y_batch = []
+            y_batch = [] if outputs is None else {name:[] for name, scale in outputs.items()}
             end = min(start + batch_size, len(ids_valid_split))
             ids_valid_batch = ids_valid_split[start:end]
             for id in ids_valid_batch.values:
@@ -141,11 +152,21 @@ def valid_generator(path, mask_path, ids_valid_split, input_size, batch_size, bb
                         mask = mask[y1:y2+1, x1:x2+1]
                 img = cv2.resize(img, (input_size, input_size), interpolation=cv2.INTER_LINEAR) 
                 mask = cv2.resize(mask, (input_size, input_size), interpolation=cv2.INTER_LINEAR)
-                mask = np.expand_dims(mask, axis=2)
                 x_batch.append(img)
-                y_batch.append(mask)
+                if outputs is None:
+                    mask = np.expand_dims(mask, axis=2)
+                    y_batch.append(mask)
+                else:
+                    for name, scale in outputs.items():
+                        size = int(input_size*scale)
+                        mask_resize = mask if scale == 1 else cv2.resize(mask, (size,size), interpolation=cv2.INTER_LINEAR)
+                        mask_resize = np.expand_dims(mask_resize, axis=2)
+                        y_batch[name].append(mask_resize)
             x_batch = np.array(x_batch, np.float32) / 255
-            y_batch = np.array(y_batch, np.float32) / 255
+            if outputs is None:
+                y_batch = np.array(y_batch, np.float32) / 255
+            else:
+                y_batch = {name:np.array(masks, np.float32) / 255 for name, masks in y_batch.items()}
             yield x_batch, y_batch
 
 
