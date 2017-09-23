@@ -1,8 +1,23 @@
 from keras.models import Model
 from keras.layers import Input, Concatenate, Conv2D, MaxPooling2D, Conv2DTranspose, UpSampling2D, BatchNormalization, Dropout, Activation
+from keras.layers import Lambda, add
+
+
+def rblock(inputs, filters, acti_layer, scale=0.1):    
+    #residual = Conv2D(filters, (1, 1), padding='same')(inputs)
+    #residual = BatchNormalization()(residual)
+    #residual = Lambda(lambda x: x*scale)(residual)
+    #res = add([inputs, residual])
+    #res = acti_layer(res)
+    
+    residual = Conv2D(filters, (1, 1), padding='same')(inputs)
+    residual = acti_layer(residual)
+    res = BatchNormalization()(residual)
+    
+    return res
 
 def conv_block(inputs, filters, acti_layer, init, bn, do=0):
-    n = Conv2D(filters, (5, 5), kernel_initializer=init, padding='same')(inputs)
+    n = Conv2D(filters, (3, 3), kernel_initializer=init, padding='same')(inputs)
     n = acti_layer(n)
     n = BatchNormalization()(n) if bn else n
     n = Dropout(do)(n) if do else n
@@ -23,6 +38,7 @@ def level_block(inputs, filters, depth, acti_layer, init, do, dbo, bn, mp, up):
         else:
             m = Conv2DTranspose(filters, (3, 3), strides=(2, 2), kernel_initializer=init, padding='same')(m)
             m = acti_layer(m)
+        n = rblock(n, filters, acti_layer)
         m = Concatenate()([n, m])
         m = conv_block(m, filters, acti_layer, init, bn)
     else:
@@ -30,7 +46,7 @@ def level_block(inputs, filters, depth, acti_layer, init, do, dbo, bn, mp, up):
         m = Dropout(0.2)(m)
     return m
 
-def UNet(img_shape, num_classes=1, filters=64, depth=4, activation=lambda x: Activation('relu')(x),
+def UNet_RES(img_shape, num_classes=1, filters=64, depth=4, activation=lambda x: Activation('relu')(x),
          init='glorot_uniform', dropout=0.2, dropout_base_only=False, batchnorm=True, maxpool=True, upconv=True):
     '''
     U-Net: Convolutional Networks for Biomedical Image Segmentation
