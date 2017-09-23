@@ -88,7 +88,7 @@ def reverseFlipShiftScaleRotate(image, flip, trans_mat):
 
 
 def train_generator(path, mask_path, ids_train_split, input_size, batch_size, bboxes=None,
-                    no_augmentation=False, outputs=None):
+                    augmentations=['HUE_SATURATION', 'SHIFT_SCALE', 'FLIP'], outputs=None):
     while True:
         for start in range(0, len(ids_train_split), batch_size):
             x_batch = []
@@ -106,16 +106,11 @@ def train_generator(path, mask_path, ids_train_split, input_size, batch_size, bb
                         mask = mask[y1:y2+1, x1:x2+1]
                 img = cv2.resize(img, (input_size, input_size), interpolation=cv2.INTER_LINEAR)
                 mask = cv2.resize(mask, (input_size, input_size), interpolation=cv2.INTER_LINEAR)
-                if not no_augmentation:
-                    img = randomHueSaturationValue(img,
-                                                hue_shift_limit=(-50, 50),
-                                                sat_shift_limit=(-5, 5),
-                                                val_shift_limit=(-15, 15))
-                    img, mask = randomShiftScaleRotate(img, mask,
-                                                    shift_limit=(-0.0625, 0.0625),
-                                                    scale_limit=(-0.1, 0.1),
-                                                    rotate_limit=(-0, 0))
-                    img, mask = randomHorizontalFlip(img, mask)
+                img = img if 'HUE_SATURATION' not in augmentations else randomHueSaturationValue(
+                    img, hue_shift_limit=(-50, 50), sat_shift_limit=(-5, 5), val_shift_limit=(-15, 15))
+                img, mask = (img, mask) if 'SHIFT_SCALE' not in augmentations else randomShiftScaleRotate(
+                    img, mask, shift_limit=(-0.0625, 0.0625), scale_limit=(-0.1, 0.1), rotate_limit=(-0, 0))
+                img, mask = (img, mask) if 'FLIP' not in augmentations else randomHorizontalFlip(img, mask)
                 x_batch.append(img)
                 if outputs is None:
                     mask = np.expand_dims(mask, axis=2)
@@ -269,4 +264,3 @@ def save_array(fname, arr):
 
 def load_array(fname):
     return bcolz.open(fname)[:]
-    
