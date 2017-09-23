@@ -21,7 +21,7 @@ def level_block(inputs, filters, depth, init):
         m = Concatenate()([n, m])
         m = conv_block(m, filters[min(depth, len(filters)-1)], init, 3)
     else:
-        m = conv_block(inputs, filters[depth], init, 1)
+        m = conv_block(inputs, filters[depth-1], init, 1)
         m = Dropout(0.2)(m)
     return m
 

@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from matplotlib import colors
 import os
 import datetime
+import random
 from keras import backend as K
 
 def randomHueSaturationValue(image, hue_shift_limit=(-180, 180),
@@ -86,11 +87,12 @@ def reverseFlipShiftScaleRotate(image, flip, trans_mat):
     return image
 
 
-def train_generator(path, mask_path, ids_train_split, input_size, batch_size, bboxes=None):
+def train_generator(path, mask_path, ids_train_split, input_size, batch_size, bboxes=None,
+                    augmentations=['HUE_SATURATION', 'SHIFT_SCALE', 'FLIP'], outputs=None):
     while True:
         for start in range(0, len(ids_train_split), batch_size):
             x_batch = []
-            y_batch = []
+            y_batch = [] if outputs is None else {name:[] for name, scale in outputs.items()}
             end = min(start + batch_size, len(ids_train_split))
             ids_train_batch = ids_train_split[start:end]           
             for id in ids_train_batch.values:
@@ -104,28 +106,34 @@ def train_generator(path, mask_path, ids_train_split, input_size, batch_size, bb
                         mask = mask[y1:y2+1, x1:x2+1]
                 img = cv2.resize(img, (input_size, input_size), interpolation=cv2.INTER_LINEAR)
                 mask = cv2.resize(mask, (input_size, input_size), interpolation=cv2.INTER_LINEAR)
-                img = randomHueSaturationValue(img,
-                                               hue_shift_limit=(-50, 50),
-                                               sat_shift_limit=(-5, 5),
-                                               val_shift_limit=(-15, 15))
-                img, mask = randomShiftScaleRotate(img, mask,
-                                                   shift_limit=(-0.0625, 0.0625),
-                                                   scale_limit=(-0.1, 0.1),
-                                                   rotate_limit=(-0, 0))
-                img, mask = randomHorizontalFlip(img, mask)
-                mask = np.expand_dims(mask, axis=2)
+                img = img if 'HUE_SATURATION' not in augmentations else randomHueSaturationValue(
+                    img, hue_shift_limit=(-50, 50), sat_shift_limit=(-5, 5), val_shift_limit=(-15, 15))
+                img, mask = (img, mask) if 'SHIFT_SCALE' not in augmentations else randomShiftScaleRotate(
+                    img, mask, shift_limit=(-0.0625, 0.0625), scale_limit=(-0.1, 0.1), rotate_limit=(-0, 0))
+                img, mask = (img, mask) if 'FLIP' not in augmentations else randomHorizontalFlip(img, mask)
                 x_batch.append(img)
-                y_batch.append(mask)
+                if outputs is None:
+                    mask = np.expand_dims(mask, axis=2)
+                    y_batch.append(mask)
+                else:
+                    for name, scale in outputs.items():
+                        size = int(input_size*scale)
+                        mask_resize = mask if scale == 1 else cv2.resize(mask, (size, size), interpolation=cv2.INTER_LINEAR)
+                        mask_resize = np.expand_dims(mask_resize, axis=2)
+                        y_batch[name].append(mask_resize)
             x_batch = np.array(x_batch, np.float32) / 255
-            y_batch = np.array(y_batch, np.float32) / 255
+            if outputs is None:
+                y_batch = np.array(y_batch, np.float32) / 255
+            else:
+                y_batch = {name:np.array(masks, np.float32) / 255 for name, masks in y_batch.items()}
             yield x_batch, y_batch
             
 
-def valid_generator(path, mask_path, ids_valid_split, input_size, batch_size, bboxes=None):
+def valid_generator(path, mask_path, ids_valid_split, input_size, batch_size, bboxes=None, outputs=None):
     while True:
         for start in range(0, len(ids_valid_split), batch_size):
             x_batch = []
-            y_batch = []
+            y_batch = [] if outputs is None else {name:[] for name, scale in outputs.items()}
             end = min(start + batch_size, len(ids_valid_split))
             ids_valid_batch = ids_valid_split[start:end]
             for id in ids_valid_batch.values:
@@ -139,11 +147,21 @@ def valid_generator(path, mask_path, ids_valid_split, input_size, batch_size, bb
                         mask = mask[y1:y2+1, x1:x2+1]
                 img = cv2.resize(img, (input_size, input_size), interpolation=cv2.INTER_LINEAR) 
                 mask = cv2.resize(mask, (input_size, input_size), interpolation=cv2.INTER_LINEAR)
-                mask = np.expand_dims(mask, axis=2)
                 x_batch.append(img)
-                y_batch.append(mask)
+                if outputs is None:
+                    mask = np.expand_dims(mask, axis=2)
+                    y_batch.append(mask)
+                else:
+                    for name, scale in outputs.items():
+                        size = int(input_size*scale)
+                        mask_resize = mask if scale == 1 else cv2.resize(mask, (size,size), interpolation=cv2.INTER_LINEAR)
+                        mask_resize = np.expand_dims(mask_resize, axis=2)
+                        y_batch[name].append(mask_resize)
             x_batch = np.array(x_batch, np.float32) / 255
-            y_batch = np.array(y_batch, np.float32) / 255
+            if outputs is None:
+                y_batch = np.array(y_batch, np.float32) / 255
+            else:
+                y_batch = {name:np.array(masks, np.float32) / 255 for name, masks in y_batch.items()}
             yield x_batch, y_batch
 
 
@@ -186,23 +204,25 @@ def show_mask(img_path, mask, pred_mask, show_img=True, bbox=None, threshold = 0
         plt.imshow(pred_mask, cmap=pred_cmap, alpha=.6)
 
 
-def show_test_masks(test_path, test_masks_path):
+def show_test_masks(test_path, test_masks_path, number_to_show = None):
     mask_cmap = colors.ListedColormap(['black', '#42f49e'])
     mask_cmap = mask_cmap(np.arange(2))
     mask_cmap[:,-1] = np.linspace(0, 1, 2)
     mask_cmap = colors.ListedColormap(mask_cmap)
-    for img_path in os.listdir(test_path):
-        plt.figure(figsize=(10,10))
+    img_paths = os.listdir(test_path)
+    if number_to_show is not None:
+        img_paths = random.sample(img_paths, number_to_show)
+    for img_path in img_paths:
+        plt.figure(figsize=(15,15))
         plt.xticks([])
         plt.yticks([])
         plt.title(test_path + img_path)
         img = cv2.imread(test_path + img_path)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         plt.imshow(img)
-        if test_masks_path is not None:
-            id =  img_path.split('.')[0]
-            mask = Image.open('{0}{1}.gif'.format(test_masks_path, id)).convert('L')
-            plt.imshow(mask, cmap=mask_cmap, alpha=.6)
+        id =  img_path.split('.')[0]
+        mask = Image.open('{0}{1}.gif'.format(test_masks_path, id)).convert('L')
+        plt.imshow(mask, cmap=mask_cmap, alpha=.6)
 
 
 def get_run_name(weights_file, model_name):
@@ -244,4 +264,3 @@ def save_array(fname, arr):
 
 def load_array(fname):
     return bcolz.open(fname)[:]
-    
