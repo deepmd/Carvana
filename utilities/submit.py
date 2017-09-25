@@ -60,7 +60,7 @@ def predictor(q, graph, rles, orig_size, threshold, model, batch_size, ids_len, 
                 mask = mask_full
             if test_masks_path is not None:
                 img = Image.fromarray((mask * 255).astype(np.uint8), mode='L')
-                img.save('{0}{1}.gif'.format(test_masks_path, id))
+                img.save('{0}{1}_mask.gif'.format(test_masks_path, id))
             rle = run_length_encode(mask)
             rles.append(rle)
 
@@ -74,6 +74,7 @@ def generate_submit(model, input_size, batch_size, threshold, test_path, submit_
     if len(ids_test) == 0:
         print("No test image has been found!")
         return
+    
     img = cv2.imread('{0}{1}.jpg'.format(test_path, ids_test[0]))
     orig_size = (img.shape[1], img.shape[0])
 

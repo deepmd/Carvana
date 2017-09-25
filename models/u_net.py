@@ -2,7 +2,7 @@ from keras.models import Model
 from keras.layers import Input, Concatenate, Conv2D, MaxPooling2D, Conv2DTranspose, UpSampling2D, BatchNormalization, Dropout, Activation
 
 def conv_block(inputs, filters, acti_layer, init, bn, do=0):
-    n = Conv2D(filters, (5, 5), kernel_initializer=init, padding='same')(inputs)
+    n = Conv2D(filters, (3, 3), kernel_initializer=init, padding='same')(inputs)
     n = acti_layer(n)
     n = BatchNormalization()(n) if bn else n
     n = Dropout(do)(n) if do else n
