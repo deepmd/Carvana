@@ -13,6 +13,8 @@ from tqdm import tqdm
 import os
 from utilities import utils_masks as utils
 
+mask_file = '{0}{1}_mask.gif'
+
 # https://www.kaggle.com/stainsby/fast-tested-rle
 def run_length_encode(mask):
     '''
@@ -33,10 +35,10 @@ def data_loader(q, test_path, batch_size, ids_test, models_info, bboxes, augment
         end = min(start + batch_size, len(ids_test))
         ids_test_batch = ids_test[start:end]
         if test_masks_path is not None:
-            exist_masks_ids = [id for id in ids_test_batch if os.path.isfile('{0}{1}.gif'.format(test_masks_path, id))]
+            exist_masks_ids = [id for id in ids_test_batch if os.path.isfile(mask_file.format(test_masks_path, id))]
             if len(exist_masks_ids) == len(ids_test_batch):
                 x_ids = exist_masks_ids
-                masks = [np.array(Image.open('{0}{1}.gif'.format(test_masks_path, id)).convert('L'), np.float32) / 255 for id in ids_test_batch]
+                masks = [np.array(Image.open(mask_file.format(test_masks_path, id)).convert('L'), np.float32) / 255 for id in ids_test_batch]
                 q.put((x_ids, None, masks))
                 continue
         for id in ids_test_batch:
@@ -85,7 +87,7 @@ def predictor(q, graph, rles, orig_size, threshold, models_info, batch_size, ids
         for i in range(len(models_info)):
             for j in range(augmentations+1):
                 with graph.as_default():
-                    preds = models_info[i].predictor(x_batches[i][j])
+                    preds = models_info[i].predictor(x_ids, x_batches[i][j])
                 preds = np.squeeze(preds, axis=3)
                 for (id, aug, pred) in zip(x_ids, x_augments[i][j], preds):
                     pred = utils.reverseFlipShiftScaleRotate(pred, aug[0], aug[1])
@@ -102,7 +104,7 @@ def predictor(q, graph, rles, orig_size, threshold, models_info, batch_size, ids
             mask = prob > threshold
             if test_masks_path is not None:
                 img = Image.fromarray((mask * 255).astype(np.uint8), mode='L')
-                img.save('{0}{1}.gif'.format(test_masks_path, id))
+                img.save(mask_file.format(test_masks_path, id))
             rle = run_length_encode(mask)
             rles.append(rle)
 
@@ -150,7 +152,7 @@ def generate_submit_ensemble(models_info, batch_size, threshold, test_path, subm
 
 class ModelInfo:
     '''
-    predictor: a lambda that receives batch of inputs and gets batch of outputs
+    predictor: a lambda that receives ids and batch of inputs and returns batch of outputs
     input_size: the size you wish test images be resized before passing to predictor (it can be None if no resizing is required) 
     cropped: whether to use bboxes
     average_weight: weight to use when ensebling predictions

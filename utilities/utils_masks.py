@@ -10,6 +10,7 @@ import pandas as pd
 import datetime
 import random
 from keras import backend as K
+#from utilities.preprocess import equalize
 
 def randomHueSaturationValue(image, hue_shift_limit=(-180, 180),
                              sat_shift_limit=(-255, 255),
@@ -97,7 +98,7 @@ def train_generator(path, mask_path, ids_train_split, input_size, batch_size, bb
             end = min(start + batch_size, len(ids_train_split))
             ids_train_batch = ids_train_split[start:end]           
             for id in ids_train_batch.values:
-                img = cv2.imread(path.format(id))
+                img = cv2.imread(path.format(id)) #equalize(path.format(id))
                 mask = np.array(Image.open(mask_path.format(id)).convert('L'))
                 if bboxes is not None:
                     x1, y1, x2, y2 = bboxes[id]                   
@@ -138,7 +139,7 @@ def valid_generator(path, mask_path, ids_valid_split, input_size, batch_size, bb
             end = min(start + batch_size, len(ids_valid_split))
             ids_valid_batch = ids_valid_split[start:end]
             for id in ids_valid_batch.values:
-                img = cv2.imread(path.format(id))
+                img = cv2.imread(path.format(id)) #equalize(path.format(id))
                 mask = np.array(Image.open(mask_path.format(id)).convert('L'))
                 if bboxes is not None:
                     x1, y1, x2, y2 = bboxes[id]
@@ -164,7 +165,6 @@ def valid_generator(path, mask_path, ids_valid_split, input_size, batch_size, bb
             else:
                 y_batch = {name:np.array(masks, np.float32) / 255 for name, masks in y_batch.items()}
             yield x_batch, y_batch
-
 
 def pseudo_generator(train_path, train_mask_path, test_path, test_mask_path, ids, 
                            input_size, batch_size, bboxes=None,
@@ -313,7 +313,6 @@ def set_results_reproducible():
 def save_array(fname, arr):
     c=bcolz.carray(arr, rootdir=fname, mode='w')
     c.flush()
-
 
 def load_array(fname):
     return bcolz.open(fname)[:]

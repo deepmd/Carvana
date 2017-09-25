@@ -6,7 +6,7 @@ def conv_block(inputs, filters, init, n):
     m = inputs
     acti_layer = lambda x: ELU()(x)
     for i in range(n):
-        #acti_layer = acti_layer if i < n-1 else lambda x: PReLU()(x)
+        acti_layer = acti_layer if i < n-1 else lambda x: PReLU()(x)
         m = Conv2D(filters, (3, 3), kernel_initializer=init, padding='same')(m)
         m = BatchNormalization()(m)
         m = acti_layer(m)
