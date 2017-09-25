@@ -1,6 +1,6 @@
 from keras.models import Model
 from keras.layers import Input, Concatenate, Conv2D, MaxPooling2D, UpSampling2D, BatchNormalization, Dropout, Activation
-#from keras.layers.advanced_activations import PReLU, ELU
+from keras.layers.advanced_activations import PReLU, ELU
 
 def conv_block(inputs, filters, init, n):
     m = inputs
@@ -22,17 +22,15 @@ def level_block(inputs, filters, depth, init):
         # Segmentation expanding path
         seg = UpSampling2D()(seg)
         seg = Concatenate()([n, seg])
-        seg = Dropout(0.5)(seg)
         seg = conv_block(seg, filters[min(depth, len(filters)-1)], init, 3)
 
         # Countour expanding path
         con = UpSampling2D()(con)
         con = Concatenate()([n, con])
-        con = Dropout(0.5)(con)
         con = conv_block(con, filters[min(depth, len(filters)-1)], init, 3)
     else:
         seg = conv_block(inputs, filters[depth], init, 1)
-        #seg = Dropout(0.2)(seg)
+        seg = Dropout(0.2)(seg)
         con = seg
     return (seg, con)
 
