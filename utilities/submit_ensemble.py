@@ -85,7 +85,7 @@ def predictor(q, graph, rles, orig_size, threshold, models_info, batch_size, ids
         for i in range(len(models_info)):
             for j in range(augmentations+1):
                 with graph.as_default():
-                    preds = models_info[i].predictor(x_batches[i][j])
+                    preds = models_info[i].predictor(x_ids, x_batches[i][j])
                 preds = np.squeeze(preds, axis=3)
                 for (id, aug, pred) in zip(x_ids, x_augments[i][j], preds):
                     pred = utils.reverseFlipShiftScaleRotate(pred, aug[0], aug[1])
@@ -150,7 +150,7 @@ def generate_submit_ensemble(models_info, batch_size, threshold, test_path, subm
 
 class ModelInfo:
     '''
-    predictor: a lambda that receives batch of inputs and gets batch of outputs
+    predictor: a lambda that receives ids and batch of inputs and returns batch of outputs
     input_size: the size you wish test images be resized before passing to predictor (it can be None if no resizing is required) 
     cropped: whether to use bboxes
     average_weight: weight to use when ensebling predictions

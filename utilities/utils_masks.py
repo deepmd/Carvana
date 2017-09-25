@@ -6,9 +6,11 @@ import random as rn
 import matplotlib.pyplot as plt
 from matplotlib import colors
 import os
+import pandas as pd
 import datetime
 import random
 from keras import backend as K
+#from utilities.preprocess import equalize
 
 def randomHueSaturationValue(image, hue_shift_limit=(-180, 180),
                              sat_shift_limit=(-255, 255),
@@ -96,7 +98,7 @@ def train_generator(path, mask_path, ids_train_split, input_size, batch_size, bb
             end = min(start + batch_size, len(ids_train_split))
             ids_train_batch = ids_train_split[start:end]           
             for id in ids_train_batch.values:
-                img = cv2.imread(path.format(id))
+                img = cv2.imread(path.format(id)) #equalize(path.format(id))
                 mask = np.array(Image.open(mask_path.format(id)).convert('L'))
                 if bboxes is not None:
                     x1, y1, x2, y2 = bboxes[id]                   
@@ -137,7 +139,7 @@ def valid_generator(path, mask_path, ids_valid_split, input_size, batch_size, bb
             end = min(start + batch_size, len(ids_valid_split))
             ids_valid_batch = ids_valid_split[start:end]
             for id in ids_valid_batch.values:
-                img = cv2.imread(path.format(id))
+                img = cv2.imread(path.format(id)) #equalize(path.format(id))
                 mask = np.array(Image.open(mask_path.format(id)).convert('L'))
                 if bboxes is not None:
                     x1, y1, x2, y2 = bboxes[id]
@@ -164,6 +166,57 @@ def valid_generator(path, mask_path, ids_valid_split, input_size, batch_size, bb
                 y_batch = {name:np.array(masks, np.float32) / 255 for name, masks in y_batch.items()}
             yield x_batch, y_batch
 
+def pseudo_generator(train_path, train_mask_path, test_path, test_mask_path, ids, 
+                           input_size, batch_size, bboxes=None,
+                           augmentations=['HUE_SATURATION', 'SHIFT_SCALE', 'FLIP'], outputs=None):
+    while True:
+        for start in range(0, len(ids), batch_size):
+            x_batch = []
+            y_batch = [] if outputs is None else {name:[] for name, scale in outputs.items()}
+            end = min(start + batch_size, len(ids))
+            ids_batch = ids[start:end]           
+            for id in ids_batch.values:
+                if os.path.exists(train_path.format(id)):
+                    path = train_path.format(id)
+                    mask_path = train_mask_path.format(id)
+                elif os.path.exists(test_path.format(id)):
+                    path = test_path.format(id)
+                    mask_path = test_mask_path.format(id)
+                else:
+                    print('{} dose not exist.'.format(id) )
+
+                img = cv2.imread(path)
+                mask = np.array(Image.open(mask_path).convert('L'))
+                if bboxes is not None:
+                    x1, y1, x2, y2 = bboxes[id]                   
+                    if (x2 > x1 and y2 > y1):
+                        # bounding box width/height is not 0
+                        img = img[y1:y2+1, x1:x2+1]
+                        mask = mask[y1:y2+1, x1:x2+1]
+                img = cv2.resize(img, (input_size, input_size), interpolation=cv2.INTER_LINEAR)
+                mask = cv2.resize(mask, (input_size, input_size), interpolation=cv2.INTER_LINEAR)
+                img = img if 'HUE_SATURATION' not in augmentations else randomHueSaturationValue(
+                    img, hue_shift_limit=(-50, 50), sat_shift_limit=(-5, 5), val_shift_limit=(-15, 15))
+                img, mask = (img, mask) if 'SHIFT_SCALE' not in augmentations else randomShiftScaleRotate(
+                    img, mask, shift_limit=(-0.0625, 0.0625), scale_limit=(-0.1, 0.1), rotate_limit=(-0, 0))
+                img, mask = (img, mask) if 'FLIP' not in augmentations else randomHorizontalFlip(img, mask)
+                x_batch.append(img)
+                if outputs is None:
+                    mask = np.expand_dims(mask, axis=2)
+                    y_batch.append(mask)
+                else:
+                    for name, scale in outputs.items():
+                        size = int(input_size*scale)
+                        mask_resize = mask if scale == 1 else cv2.resize(mask, (size, size), interpolation=cv2.INTER_LINEAR)
+                        mask_resize = np.expand_dims(mask_resize, axis=2)
+                        y_batch[name].append(mask_resize)
+            x_batch = np.array(x_batch, np.float32) / 255
+            if outputs is None:
+                y_batch = np.array(y_batch, np.float32) / 255
+            else:
+                y_batch = {name:np.array(masks, np.float32) / 255 for name, masks in y_batch.items()}
+
+            yield x_batch, y_batch
 
 def show_mask(img_path, mask, pred_mask, show_img=True, bbox=None, threshold = 0.5):
     mask_cmap = colors.ListedColormap(['black', '#bd0b42'])
@@ -261,6 +314,32 @@ def save_array(fname, arr):
     c=bcolz.carray(arr, rootdir=fname, mode='w')
     c.flush()
 
-
 def load_array(fname):
     return bcolz.open(fname)[:]
+
+def make_list_ids(ids_train, ids_test, batch_size, accum_iters):
+    if batch_size < 4:
+            batch_size = accum_iters*batch_size
+    test_pro = batch_size/4
+    train_pro = (3*batch_size)/4
+
+    ids_test = pd.concat([ids_test, ids_test.sample(test_pro-(len(ids_test)%test_pro))])
+    test_ids = np.split(np.array(ids_test.values), indices_or_sections=(len(ids_test)/test_pro))
+    test_ids = np.array(test_ids) 
+
+    ids_train = pd.concat([ids_train, ids_train.sample(train_pro-(len(ids_train)%train_pro))])
+    train_ids = np.array(np.split(np.array(ids_train.values), indices_or_sections=(len(ids_train)/train_pro)))
+
+    dif = test_ids.shape[0] - train_ids.shape[0]
+
+    ids_train = pd.concat([ids_train, ids_train.sample(dif*train_pro, replace=True)])
+    train_ids = np.array(np.split(np.array(ids_train.values), indices_or_sections=(len(ids_train)/train_pro)))
+
+    data = []
+    for i in range(train_ids.shape[0]):
+        for it in test_ids[i]:
+            data.append(it)
+        for it in train_ids[i]:
+            data.append(it)
+                
+    return pd.Series(data) 
