@@ -274,7 +274,7 @@ def show_test_masks(test_path, test_masks_path, number_to_show = None):
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         plt.imshow(img)
         id =  img_path.split('.')[0]
-        mask = Image.open('{0}{1}.gif'.format(test_masks_path, id)).convert('L')
+        mask = Image.open('{0}{1}_mask.gif'.format(test_masks_path, id)).convert('L')
         plt.imshow(mask, cmap=mask_cmap, alpha=.6)
 
 
@@ -320,8 +320,8 @@ def load_array(fname):
 def make_list_ids(ids_train, ids_test, batch_size, accum_iters):
     if batch_size < 4:
             batch_size = accum_iters*batch_size
-    test_pro = batch_size/4
-    train_pro = (3*batch_size)/4
+    test_pro = int(batch_size/4)
+    train_pro = int((3*batch_size)/4)
 
     ids_test = pd.concat([ids_test, ids_test.sample(test_pro-(len(ids_test)%test_pro))])
     test_ids = np.split(np.array(ids_test.values), indices_or_sections=(len(ids_test)/test_pro))

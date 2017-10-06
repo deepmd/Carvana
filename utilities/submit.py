@@ -43,11 +43,11 @@ def data_loader(q, test_path, batch_size, ids_test, input_size, bboxes):
         q.put((x_ids, x_batch))
 
 
-def predictor(q, graph, rles, orig_size, threshold, model, batch_size, ids_len, bboxes, test_masks_path):
+def predictor(q, graph, rles, orig_size, threshold, model_predictor, batch_size, ids_len, bboxes, test_masks_path):
     for i in tqdm(range(0, ids_len, batch_size)):
         (x_ids, x_batch) = q.get()
         with graph.as_default():
-            preds = model.predict_on_batch(x_batch)
+            preds = model_predictor(x_batch)
         preds = np.squeeze(preds, axis=3)
         for (id, pred) in zip(x_ids, preds):
             (x1,y1,x2,y2) = (0,0,0,0) if bboxes is None else tuple(bboxes[id])
@@ -65,7 +65,7 @@ def predictor(q, graph, rles, orig_size, threshold, model, batch_size, ids_len, 
             rles.append(rle)
 
 
-def generate_submit(model, input_size, batch_size, threshold, test_path, submit_path,
+def generate_submit(model_predictor, input_size, batch_size, threshold, test_path, submit_path,
                     run_name, test_masks_path=None, bboxes=None, q_size = 10):
     rles = []
     graph = tf.get_default_graph()
@@ -94,7 +94,7 @@ def generate_submit(model, input_size, batch_size, threshold, test_path, submit_
     t1 = threading.Thread(target=data_loader, name='DataLoader',
                           args=(q, test_path, batch_size, ids_test, (input_size, input_size), bboxes, ))
     t2 = threading.Thread(target=predictor, name='Predictor', 
-                          args=(q, graph, rles, orig_size, threshold, model, batch_size, len(ids_test), bboxes, test_masks_path, ))
+                          args=(q, graph, rles, orig_size, threshold, model_predictor, batch_size, len(ids_test), bboxes, test_masks_path, ))
     print('Predicting on {} samples with batch_size = {}...'.format(len(ids_test), batch_size))
     t1.start()
     t2.start()

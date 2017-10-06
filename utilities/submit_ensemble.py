@@ -27,7 +27,7 @@ def run_length_encode(mask):
     rle = ' '.join([str(r) for r in runs])
     return rle
 
-def data_loader(q, test_path, batch_size, ids_test, models_info, bboxes, augmentations, test_masks_path):
+def data_loader(q, test_path, batch_size, ids_test, models_info, bboxes, augmentations, test_masks_path, reapply_bboxed_path):
     for start in range(0, len(ids_test), batch_size):
         x_batches = [[[] for _ in range(augmentations+1)] for _ in range(len(models_info))]
         x_augments = [[[] for _ in range(augmentations+1)] for _ in range(len(models_info))]
@@ -38,7 +38,19 @@ def data_loader(q, test_path, batch_size, ids_test, models_info, bboxes, augment
             exist_masks_ids = [id for id in ids_test_batch if os.path.isfile(mask_file.format(test_masks_path, id))]
             if len(exist_masks_ids) == len(ids_test_batch):
                 x_ids = exist_masks_ids
-                masks = [np.array(Image.open(mask_file.format(test_masks_path, id)).convert('L'), np.float32) / 255 for id in ids_test_batch]
+                masks = []
+                for id in ids_test_batch:
+                    if reapply_bboxed_path is None:
+                        masks.append(np.array(Image.open(mask_file.format(test_masks_path, id)).convert('L'), np.float32) / 255)
+                    else:
+                        (x1,y1,x2,y2) = tuple(bboxes[id])
+                        mask = np.array(Image.open(mask_file.format(test_masks_path, id)).convert('L'), np.float32)
+                        mask_bboxed = np.zeros_like(mask, dtype=np.float32)
+                        mask_bboxed[y1:y2+1, x1:x2+1] = mask[y1:y2+1, x1:x2+1]
+                        masks.append(mask_bboxed / 255)
+                        mask_bboxed_img = Image.fromarray(mask_bboxed.astype(np.uint8), mode='L')
+                        mask_bboxed_img.save(mask_file.format(reapply_bboxed_path, id))
+                        
                 q.put((x_ids, None, masks))
                 continue
         for id in ids_test_batch:
@@ -110,7 +122,7 @@ def predictor(q, graph, rles, orig_size, threshold, models_info, batch_size, ids
 
 
 def generate_submit_ensemble(models_info, batch_size, threshold, test_path, submit_path, submit_name,
-                             augmentations=4, test_masks_path=None, bboxes=None, q_size=5):
+                             augmentations, test_masks_path, bboxes, q_size, reapply_bboxed_path):
     rles = []
     graph = tf.get_default_graph()
 
@@ -135,7 +147,7 @@ def generate_submit_ensemble(models_info, batch_size, threshold, test_path, subm
 
     q = queue.Queue(maxsize=q_size)
     t1 = threading.Thread(target=data_loader, name='DataLoader',
-                          args=(q, test_path, batch_size, ids_test, models_info, bboxes, augmentations, test_masks_path, ))
+                          args=(q, test_path, batch_size, ids_test, models_info, bboxes, augmentations, test_masks_path, reapply_bboxed_path, ))
     t2 = threading.Thread(target=predictor, name='Predictor', 
                           args=(q, graph, rles, orig_size, threshold, models_info, batch_size, len(ids_test), bboxes, augmentations, test_masks_path, ))
     print('Predicting on {} samples with batch_size = {}...'.format(len(ids_test), batch_size))
